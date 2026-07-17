@@ -83,10 +83,6 @@ export const SmartImportTab: React.FC = () => {
     }
 
     setIsSearchingAll(true);
-    setIsSearchingAirports(searchAirports);
-    setIsSearchingTafl(searchTafl);
-    setIsSearchingRptrs(supportsDigital && searchDmrRepeaters);
-    setIsSearchingSsrf(searchSsrf);
     setError(null);
 
     // Clear previous results
@@ -104,7 +100,15 @@ export const SmartImportTab: React.FC = () => {
     }
 
     try {
+      // Resolve the location first (may prompt for/await geolocation). Only mark
+      // the individual searches as in-progress afterwards so their loading
+      // indicators reflect actual data fetching, not the geolocation wait.
       const { lat, lon, radius } = await resolveCoordinates();
+
+      setIsSearchingAirports(searchAirports);
+      setIsSearchingTafl(searchTafl);
+      setIsSearchingRptrs(supportsDigital && searchDmrRepeaters);
+      setIsSearchingSsrf(searchSsrf);
 
       // Search all selected types in parallel
       const searchPromises: Promise<void>[] = [];
