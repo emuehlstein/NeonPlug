@@ -3,6 +3,8 @@ import { useLocationState } from '../../hooks/useLocationState';
 import { findNearbyAirports, type AirportData } from '../../data/airportsData';
 import { findNearbyTaflEntries, type TaflData } from '../../data/taflData';
 import { findNearbyRptrs, type RptrData } from '../../data/rptrsData';
+import { findNearbySsrf, type SsrfEntry } from '../../data/ssrfData';
+import { useSsrfSourcesStore } from '../../store/ssrfSourcesStore';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
@@ -11,6 +13,7 @@ import { ChirpSource } from './sources/ChirpSource';
 import { AirportSource } from './sources/AirportSource';
 import { TaflSource } from './sources/TaflSource';
 import { RptrsSource } from './sources/RptrsSource';
+import { SsrfSource } from './sources/SsrfSource';
 import { MmdvmSource } from './sources/MmdvmSource';
 import { FixedChannelsSource } from './sources/FixedChannelsSource';
 
@@ -28,10 +31,13 @@ export const SmartImportTab: React.FC = () => {
     resolveCoordinates,
   } = useLocationState();
 
+  const { getSelectedSource } = useSsrfSourcesStore();
+
   const [error, setError] = useState<string | null>(null);
   const [searchAirports, setSearchAirports] = useState(true);
   const [searchTafl, setSearchTafl] = useState(true);
   const [searchDmrRepeaters, setSearchDmrRepeaters] = useState(true);
+  const [searchSsrf, setSearchSsrf] = useState(true);
   const [isSearchingAll, setIsSearchingAll] = useState(false);
 
   // Generation result
@@ -51,6 +57,10 @@ export const SmartImportTab: React.FC = () => {
   const [rptrsLoadProgress, setRptrsLoadProgress] = useState<{ percent: number; loaded: number; total: number } | null>(null);
   const [isSearchingRptrs, setIsSearchingRptrs] = useState(false);
 
+  // SSRF-Lite search results
+  const [ssrfEntries, setSsrfEntries] = useState<SsrfEntry[]>([]);
+  const [isSearchingSsrf, setIsSearchingSsrf] = useState(false);
+
   // These are kept here for the search handler to use (not passed to children)
   const [airportRadius] = useState('50');
   const [taflRadius] = useState('10');
@@ -63,12 +73,12 @@ export const SmartImportTab: React.FC = () => {
   // Unified search handler that searches all selected types
   const handleSearchAll = async () => {
     const hasSearchType = supportsDigital
-      ? (searchAirports || searchTafl || searchDmrRepeaters)
-      : (searchAirports || searchTafl);
+      ? (searchAirports || searchTafl || searchDmrRepeaters || searchSsrf)
+      : (searchAirports || searchTafl || searchSsrf);
     if (!hasSearchType) {
       setError(supportsDigital
-        ? 'Please select at least one search type (Airports, TAFL, or DMR Repeaters)'
-        : 'Please select at least one search type (Airports or TAFL)');
+        ? 'Please select at least one search type (Airports, TAFL, DMR Repeaters, or SSRF-Lite)'
+        : 'Please select at least one search type (Airports, TAFL, or SSRF-Lite)');
       return;
     }
 
@@ -76,6 +86,7 @@ export const SmartImportTab: React.FC = () => {
     setIsSearchingAirports(searchAirports);
     setIsSearchingTafl(searchTafl);
     setIsSearchingRptrs(supportsDigital && searchDmrRepeaters);
+    setIsSearchingSsrf(searchSsrf);
     setError(null);
 
     // Clear previous results
@@ -87,6 +98,9 @@ export const SmartImportTab: React.FC = () => {
     }
     if (searchDmrRepeaters) {
       setRptrs([]);
+    }
+    if (searchSsrf) {
+      setSsrfEntries([]);
     }
 
     try {
@@ -150,12 +164,34 @@ export const SmartImportTab: React.FC = () => {
         );
       }
 
+      if (searchSsrf) {
+        searchPromises.push(
+          (async () => {
+            // Isolate SSRF-Lite fetch errors (e.g. a bad custom fork URL) so
+            // they don't discard results from the other search types.
+            try {
+              const source = getSelectedSource();
+              if (!source) {
+                throw new Error('No SSRF-Lite data source selected');
+              }
+              const nearbySsrf = await findNearbySsrf(source.url, lat, lon, radius);
+              setSsrfEntries(nearbySsrf);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Failed to search SSRF-Lite');
+            } finally {
+              setIsSearchingSsrf(false);
+            }
+          })()
+        );
+      }
+
       await Promise.all(searchPromises);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to search');
       setIsSearchingAirports(false);
       setIsSearchingTafl(false);
       setIsSearchingRptrs(false);
+      setIsSearchingSsrf(false);
     } finally {
       setIsSearchingAll(false);
       setTaflLoadProgress(null);
@@ -329,12 +365,21 @@ export const SmartImportTab: React.FC = () => {
               <span className="text-cool-gray">DMR Repeaters</span>
             </label>
             )}
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={searchSsrf}
+                onChange={(e) => setSearchSsrf(e.target.checked)}
+                className="mr-2"
+              />
+              <span className="text-cool-gray">SSRF-Lite (open repeater data)</span>
+            </label>
           </div>
         </div>
 
         <Button
           onClick={handleSearchAll}
-          disabled={isSearchingAll || (supportsDigital ? (!searchAirports && !searchTafl && !searchDmrRepeaters) : (!searchAirports && !searchTafl))}
+          disabled={isSearchingAll || (supportsDigital ? (!searchAirports && !searchTafl && !searchDmrRepeaters && !searchSsrf) : (!searchAirports && !searchTafl && !searchSsrf))}
           className="bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright w-full"
         >
           {isSearchingAll
@@ -349,7 +394,7 @@ export const SmartImportTab: React.FC = () => {
         </Button>
 
         {/* Progress indicators */}
-        {(isSearchingAirports || isSearchingTafl || isSearchingRptrs) && (
+        {(isSearchingAirports || isSearchingTafl || isSearchingRptrs || isSearchingSsrf) && (
           <div className="mt-4 space-y-2">
             {isSearchingAirports && (
               <div className="text-sm text-cool-gray">Searching airports...</div>
@@ -381,6 +426,9 @@ export const SmartImportTab: React.FC = () => {
                   />
                 </div>
               </div>
+            )}
+            {isSearchingSsrf && (
+              <div className="text-sm text-cool-gray">Loading SSRF-Lite data...</div>
             )}
           </div>
         )}
@@ -415,6 +463,15 @@ export const SmartImportTab: React.FC = () => {
         rptrs={rptrs}
         isSearching={isSearchingRptrs}
         loadProgress={rptrsLoadProgress}
+        supportsDigital={supportsDigital}
+        onError={handleSetError}
+        onGenerationResult={setGenerationResult}
+      />
+
+      {/* 7b. SsrfSource (open RF reference data, analog + digital) */}
+      <SsrfSource
+        entries={ssrfEntries}
+        isSearching={isSearchingSsrf}
         supportsDigital={supportsDigital}
         onError={handleSetError}
         onGenerationResult={setGenerationResult}
