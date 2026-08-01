@@ -173,6 +173,58 @@ export async function loadSsrfData(sourceUrl: string): Promise<SsrfChannel[]> {
   }
 }
 
+/**
+ * Parse a local (pasted/uploaded) data.json string into its `channels[]`
+ * array. Used for `kind: 'local'` sources so private overlays never hit the
+ * network. Throws on malformed input.
+ */
+export function parseSsrfDataText(jsonText: string): SsrfChannel[] {
+  let doc: SsrfDataDocument;
+  try {
+    doc = JSON.parse(jsonText) as SsrfDataDocument;
+  } catch {
+    throw new Error('Local SSRF-Lite data is not valid JSON');
+  }
+  if (!doc || !Array.isArray(doc.channels)) {
+    throw new Error('Local SSRF-Lite data.json is missing a "channels" array');
+  }
+  return doc.channels;
+}
+
+/**
+ * Filter SSRF-Lite channels to those within `radius` miles of a location,
+ * sorted nearest-first. Channels without coordinates get `distance: 0` and are
+ * always included (simplex family/GMRS overlays often have no site fix), so
+ * local overlays are never silently dropped by geographic search.
+ */
+export function selectNearbyOrCoordless(
+  channels: SsrfChannel[],
+  latitude: number,
+  longitude: number,
+  radius = 50
+): SsrfEntry[] {
+  const results: SsrfEntry[] = [];
+  for (const ch of channels) {
+    if (typeof ch.freq_mhz !== 'number' || Number.isNaN(ch.freq_mhz)) continue;
+    const hasCoords =
+      ch.lat != null &&
+      ch.lon != null &&
+      ch.lat >= -90 &&
+      ch.lat <= 90 &&
+      ch.lon >= -180 &&
+      ch.lon <= 180;
+    if (!hasCoords) {
+      // Coord-less channel (e.g. simplex family net) — always include.
+      results.push({ ...ch, distance: 0 });
+      continue;
+    }
+    const distance = calculateDistance(latitude, longitude, ch.lat as number, ch.lon as number);
+    if (distance <= radius) results.push({ ...ch, distance });
+  }
+  results.sort((a, b) => a.distance - b.distance);
+  return results;
+}
+
 /** Clear the in-memory cache (e.g. to force a refresh of a source). */
 export function clearSsrfCache(sourceUrl?: string): void {
   if (sourceUrl) {

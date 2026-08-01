@@ -3,6 +3,9 @@ import {
   parseSsrfModeDetail,
   isAllowedSsrfUrl,
   resolveSsrfDataUrl,
+  parseSsrfDataText,
+  selectNearbyOrCoordless,
+  type SsrfChannel,
   type SsrfEntry,
 } from '../../src/data/ssrfData';
 import { generateSsrfChannels } from '../../src/services/ssrfChannels';
@@ -52,6 +55,74 @@ describe('parseSsrfModeDetail', () => {
   it('returns empty for blank detail', () => {
     expect(parseSsrfModeDetail('')).toEqual({});
     expect(parseSsrfModeDetail(null)).toEqual({});
+  });
+});
+
+describe('parseSsrfDataText (local overlay)', () => {
+  it('parses a valid data.json into channels[]', () => {
+    const text = JSON.stringify({
+      generated: '2026-08-01',
+      channels: [
+        { file: 'x.yml', name: 'FAM GMRS16', freq_mhz: 462.575, input_mhz: null, mode: 'FM', mode_detail: 'CTCSS 141.3 Hz', notes: '', usage: 'simplex', service: 'gmrs' },
+      ],
+    });
+    const channels = parseSsrfDataText(text);
+    expect(channels).toHaveLength(1);
+    expect(channels[0].name).toBe('FAM GMRS16');
+  });
+
+  it('throws on invalid JSON', () => {
+    expect(() => parseSsrfDataText('{not json')).toThrow(/not valid JSON/i);
+  });
+
+  it('throws when channels array is missing', () => {
+    expect(() => parseSsrfDataText(JSON.stringify({ foo: 1 }))).toThrow(/channels/i);
+  });
+});
+
+describe('selectNearbyOrCoordless', () => {
+  const chan = (o: Partial<SsrfChannel> = {}): SsrfChannel => ({
+    file: 'x.yml',
+    name: 'ch',
+    usage: 'simplex',
+    service: 'gmrs',
+    notes: '',
+    freq_mhz: 462.575,
+    input_mhz: null,
+    mode: 'FM',
+    mode_detail: '',
+    lat: null,
+    lon: null,
+    ...o,
+  });
+
+  it('always includes coord-less channels (simplex family net)', () => {
+    const out = selectNearbyOrCoordless([chan({ name: 'FAM GMRS16' })], 41.9, -87.6, 5);
+    expect(out).toHaveLength(1);
+    expect(out[0].name).toBe('FAM GMRS16');
+    expect(out[0].distance).toBe(0);
+  });
+
+  it('filters coord-bearing channels by radius', () => {
+    const near = chan({ name: 'near', lat: 41.9, lon: -87.6 });
+    const far = chan({ name: 'far', lat: 25.0, lon: -80.0 });
+    const out = selectNearbyOrCoordless([near, far], 41.9, -87.6, 50);
+    const names = out.map((e) => e.name);
+    expect(names).toContain('near');
+    expect(names).not.toContain('far');
+  });
+
+  it('sorts nearest-first with coord-less pinned at distance 0', () => {
+    const coordless = chan({ name: 'coordless' });
+    const near = chan({ name: 'near', lat: 41.95, lon: -87.65 });
+    const out = selectNearbyOrCoordless([near, coordless], 41.9, -87.6, 50);
+    expect(out[0].distance).toBe(0);
+    expect(out[0].name).toBe('coordless');
+  });
+
+  it('drops channels with non-numeric freq', () => {
+    const bad = chan({ freq_mhz: NaN });
+    expect(selectNearbyOrCoordless([bad], 41.9, -87.6, 50)).toHaveLength(0);
   });
 });
 
