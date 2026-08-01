@@ -3,7 +3,12 @@ import { useLocationState } from '../../hooks/useLocationState';
 import { findNearbyAirports, type AirportData } from '../../data/airportsData';
 import { findNearbyTaflEntries, type TaflData } from '../../data/taflData';
 import { findNearbyRptrs, type RptrData } from '../../data/rptrsData';
-import { findNearbySsrf, type SsrfEntry } from '../../data/ssrfData';
+import {
+  loadSsrfData,
+  parseSsrfDataText,
+  selectNearbyOrCoordless,
+  type SsrfEntry,
+} from '../../data/ssrfData';
 import { useSsrfSourcesStore } from '../../store/ssrfSourcesStore';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -178,7 +183,16 @@ export const SmartImportTab: React.FC = () => {
               if (!source) {
                 throw new Error('No SSRF-Lite data source selected');
               }
-              const nearbySsrf = await findNearbySsrf(source.url, lat, lon, radius);
+              let nearbySsrf: SsrfEntry[];
+              if (source.kind === 'local') {
+                // Local overlay: parse in-memory data.json, keep coord-less
+                // channels (simplex family/GMRS) instead of dropping them.
+                const channels = parseSsrfDataText(source.localData || '');
+                nearbySsrf = selectNearbyOrCoordless(channels, lat, lon, radius);
+              } else {
+                const channels = await loadSsrfData(source.url);
+                nearbySsrf = selectNearbyOrCoordless(channels, lat, lon, radius);
+              }
               setSsrfEntries(nearbySsrf);
             } catch (err) {
               setError(err instanceof Error ? err.message : 'Failed to search SSRF-Lite');

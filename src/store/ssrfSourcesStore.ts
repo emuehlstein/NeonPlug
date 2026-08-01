@@ -11,7 +11,19 @@ import { isAllowedSsrfUrl } from '../data/ssrfData';
 export interface SsrfSource {
   id: string;
   name: string;
+  /**
+   * For `kind: 'url'` (default) this is the HTTPS data.json/site URL that is
+   * fetched at search time. For `kind: 'local'` it is unused (empty string).
+   */
   url: string;
+  /**
+   * Source kind. `'url'` fetches a remote data.json (allowlisted origins);
+   * `'local'` holds a pasted/uploaded data.json in memory so private overlays
+   * (e.g. family channels) never leave the machine.
+   */
+  kind?: 'url' | 'local';
+  /** Raw data.json text for `kind: 'local'` sources (persisted locally). */
+  localData?: string;
   /** Built-in default sources cannot be removed. */
   builtIn?: boolean;
 }
@@ -20,8 +32,13 @@ interface SsrfSourcesState {
   sources: SsrfSource[];
   selectedSourceId: string;
   selectSource: (id: string) => void;
-  /** Add a custom source. Returns an error message, or null on success. */
+  /** Add a custom URL source. Returns an error message, or null on success. */
   addSource: (name: string, url: string) => string | null;
+  /**
+   * Add a local (in-memory) source from pasted/uploaded data.json text.
+   * Returns an error message, or null on success.
+   */
+  addLocalSource: (name: string, jsonText: string) => string | null;
   removeSource: (id: string) => void;
   getSelectedSource: () => SsrfSource | undefined;
 }
@@ -46,7 +63,12 @@ function loadSources(): SsrfSource[] {
     if (!Array.isArray(custom)) return DEFAULT_SOURCES;
     // Keep only valid, non-built-in custom sources and merge with defaults.
     const validCustom = custom.filter(
-      (s) => s && !s.builtIn && typeof s.url === 'string' && isAllowedSsrfUrl(s.url)
+      (s) =>
+        s &&
+        !s.builtIn &&
+        (s.kind === 'local'
+          ? typeof s.localData === 'string' && s.localData.length > 0
+          : typeof s.url === 'string' && isAllowedSsrfUrl(s.url))
     );
     return [...DEFAULT_SOURCES, ...validCustom];
   } catch {
@@ -100,7 +122,7 @@ export const useSsrfSourcesStore = create<SsrfSourcesState>((set, get) => ({
     if (!isAllowedSsrfUrl(trimmedUrl)) {
       return 'URL must be HTTPS on github.io or raw.githubusercontent.com';
     }
-    if (get().sources.some((s) => s.url === trimmedUrl)) {
+    if (get().sources.some((s) => s.kind !== 'local' && s.url === trimmedUrl)) {
       return 'A source with this URL already exists';
     }
 
@@ -108,6 +130,42 @@ export const useSsrfSourcesStore = create<SsrfSourcesState>((set, get) => ({
       id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: trimmedName,
       url: trimmedUrl,
+      kind: 'url',
+    };
+    const sources = [...get().sources, newSource];
+    saveSources(sources);
+    saveSelectedId(newSource.id);
+    set({ sources, selectedSourceId: newSource.id });
+    return null;
+  },
+
+  addLocalSource: (name, jsonText) => {
+    const trimmedName = name.trim();
+    const text = jsonText.trim();
+    if (!trimmedName) return 'Please enter a name for the source';
+    if (!text) return 'Paste or upload a data.json first';
+    // Validate the payload shape up front so bad data fails at add-time, not
+    // silently at search-time.
+    let doc: unknown;
+    try {
+      doc = JSON.parse(text);
+    } catch {
+      return 'Local data is not valid JSON';
+    }
+    if (
+      !doc ||
+      typeof doc !== 'object' ||
+      !Array.isArray((doc as { channels?: unknown }).channels)
+    ) {
+      return 'Local data.json is missing a "channels" array';
+    }
+
+    const newSource: SsrfSource = {
+      id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: trimmedName,
+      url: '',
+      kind: 'local',
+      localData: text,
     };
     const sources = [...get().sources, newSource];
     saveSources(sources);
