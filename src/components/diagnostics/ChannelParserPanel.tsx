@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useChannelsStore } from '../../store/channelsStore';
-import { CollapsibleSection } from './CollapsibleSection';
+import { CollapsibleSection } from '../ui/CollapsibleSection';
+import { BUTTON, FIELD_CAUTION } from '../ui/controlStyles';
 
 interface ChannelParserPanelProps {
   /** Shared with the CPS CSV Comparison panel — owned by DiagnosticsTab. */
@@ -45,7 +46,7 @@ export const ChannelParserPanel: React.FC<ChannelParserPanelProps> = ({
               e.stopPropagation();
               setShowChannelParser(!showChannelParser);
             }}
-            className="text-sm text-yellow-400 hover:text-yellow-300"
+            className={`${BUTTON.cautionLink} text-sm`}
           >
             {showChannelParser ? '▼ Hide' : '▶ Show'}
           </button>
@@ -62,7 +63,7 @@ export const ChannelParserPanel: React.FC<ChannelParserPanelProps> = ({
                 <select
                   value={selectedChannelNumber}
                   onChange={(e) => setSelectedChannelNumber(parseInt(e.target.value))}
-                  className="w-full px-3 py-2 bg-deep-gray border border-yellow-600/30 rounded text-white text-sm focus:outline-none focus:border-yellow-400"
+                  className={`${FIELD_CAUTION} w-full px-3 py-2 border rounded text-sm`}
                 >
                   {(() => {
                     const channelNumbers = Array.from(rawChannelData.keys());
@@ -95,7 +96,7 @@ export const ChannelParserPanel: React.FC<ChannelParserPanelProps> = ({
                 <select
                   value={selectedChannelNumber2 || ''}
                   onChange={(e) => setSelectedChannelNumber2(e.target.value ? parseInt(e.target.value) : null)}
-                  className="w-full px-3 py-2 bg-deep-gray border border-yellow-600/30 rounded text-white text-sm focus:outline-none focus:border-yellow-400"
+                  className={`${FIELD_CAUTION} w-full px-3 py-2 border rounded text-sm`}
                 >
                   <option value="">None</option>
                   {(() => {
@@ -186,7 +187,7 @@ export const ChannelParserPanel: React.FC<ChannelParserPanelProps> = ({
                 const scanBw = channelBytes[0x19];
                 const bandwidth = (scanBw & 0x80) !== 0 ? '25kHz' : '12.5kHz';
                 const scanAdd = (scanBw & 0x40) !== 0;
-                const scanListId = (scanBw >> 2) & 0x0F;
+                const scanListId = scanBw & 0x3F;
 
                 const talkaroundAprs = channelBytes[0x1A];
                 const forbidTalkaround = (talkaroundAprs & 0x80) !== 0;
@@ -388,7 +389,7 @@ export const ChannelParserPanel: React.FC<ChannelParserPanelProps> = ({
                 }},
                 { offset: 0x19, label: 'Bandwidth (0x19 bit 7)', getValue: (f: typeof fields1) => f.bandwidth },
                 { offset: 0x19, label: 'Scan Add (0x19 bit 6)', getValue: (f: typeof fields1) => f.scanAdd ? 'Yes' : 'No' },
-                { offset: 0x19, label: 'Scan List ID (0x19 bits 5-2)', getValue: (f: typeof fields1) => f.scanListId.toString() },
+                { offset: 0x19, label: 'Scan List ID (0x19 bits 5-0)', getValue: (f: typeof fields1) => f.scanListId.toString() },
                 { offset: 0x1A, label: 'Talkaround & APRS (0x1A)', getValue: (f: typeof fields1) => {
                   const talkaroundAprs = f.bytes[0x1A];
                   return `0x${talkaroundAprs.toString(16).toUpperCase().padStart(2, '0')} (forbidTalkaround=${f.forbidTalkaround}, aprsReceive=${f.aprsReceive})`;

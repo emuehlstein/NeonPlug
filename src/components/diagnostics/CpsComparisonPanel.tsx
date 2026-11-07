@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useChannelsStore } from '../../store/channelsStore';
+import { BUTTON, FIELD_CAUTION } from '../ui/controlStyles';
 
 interface CpsComparisonPanelProps {
   /** Shared with the Channel Parser panel — owned by DiagnosticsTab. */
@@ -37,7 +38,7 @@ export const CpsComparisonPanel: React.FC<CpsComparisonPanelProps> = ({
               e.stopPropagation();
               setShowCpsComparison(!showCpsComparison);
             }}
-            className="text-sm text-yellow-400 hover:text-yellow-300"
+            className={`${BUTTON.cautionLink} text-sm`}
           >
             {showCpsComparison ? '▼ Hide' : '▶ Show'}
           </button>
@@ -104,7 +105,7 @@ export const CpsComparisonPanel: React.FC<CpsComparisonPanelProps> = ({
               <select
                 value={selectedChannelNumber}
                 onChange={(e) => setSelectedChannelNumber(parseInt(e.target.value))}
-                className="w-full px-3 py-2 bg-deep-gray border border-yellow-600/30 rounded text-white text-sm focus:outline-none focus:border-yellow-400 mb-4"
+                className={`${FIELD_CAUTION} w-full px-3 py-2 border rounded text-sm mb-4`}
               >
                 {Array.from(cpsCsvData.keys())
                   .sort((a, b) => a - b)
@@ -155,7 +156,7 @@ export const CpsComparisonPanel: React.FC<CpsComparisonPanelProps> = ({
                   const scanBw = channelBytes[0x19];
                   const bandwidth = (scanBw & 0x80) !== 0 ? '25kHz' : '12.5kHz';
                   const scanAdd = (scanBw & 0x40) !== 0;
-                  const scanListId = (scanBw >> 2) & 0x0F;
+                  const scanListId = scanBw & 0x3F;
 
                   const talkaroundAprs = channelBytes[0x1A];
                   const forbidTalkaround = (talkaroundAprs & 0x80) !== 0;
@@ -250,7 +251,7 @@ export const CpsComparisonPanel: React.FC<CpsComparisonPanelProps> = ({
                   { cpsField: 'Forbid TX', ourField: 'forbidTx', offset: '0x18 bit 3', getOurValue: () => ourFields.forbidTx ? '1' : '0', getCpsValue: () => cpsChannel['Forbid TX'] },
                   { cpsField: 'Lone Work', ourField: 'loneWorker', offset: '0x18 bit 0', getOurValue: () => ourFields.loneWorker ? '1' : '0', getCpsValue: () => cpsChannel['Lone Work'] },
                   { cpsField: 'Auto Scan', ourField: 'scanAdd', offset: '0x19 bit 6', getOurValue: () => ourFields.scanAdd ? '1' : '0', getCpsValue: () => cpsChannel['Auto Scan'] },
-                  { cpsField: 'Scan List', ourField: 'scanListId', offset: '0x19 bits 5-2', getOurValue: () => ourFields.scanListId.toString(), getCpsValue: () => cpsChannel['Scan List'] === 'None' ? '0' : cpsChannel['Scan List'] },
+                  { cpsField: 'Scan List', ourField: 'scanListId', offset: '0x19 bits 5-0', getOurValue: () => ourFields.scanListId.toString(), getCpsValue: () => cpsChannel['Scan List'] === 'None' ? '0' : cpsChannel['Scan List'] },
                   { cpsField: 'Forbid Talkaround', ourField: 'forbidTalkaround', offset: '0x1A bit 7', getOurValue: () => ourFields.forbidTalkaround ? '1' : '0', getCpsValue: () => cpsChannel['Forbid Talkaround'] },
                   { cpsField: 'APRS Receive', ourField: 'aprsReceive', offset: '0x1A bit 2', getOurValue: () => ourFields.aprsReceive ? '1' : '0', getCpsValue: () => cpsChannel['APRS Receive'] },
                   { cpsField: 'Emergency Indicator', ourField: 'emergencyIndicator', offset: '0x1B bit 7', getOurValue: () => ourFields.emergencyIndicator ? '1' : '0', getCpsValue: () => cpsChannel['Emergency Indicator'] },

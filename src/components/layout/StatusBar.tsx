@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useRadioStore } from '../../store/radioStore';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { Modal } from '../ui/Modal';
+import { BUTTON } from '../ui/controlStyles';
+import { firmwareWarning } from '../../utils/firmware';
 
 const USER_GESTURE_MESSAGE = 'Unable to read from radio, please read from a radio or load a codeplug to continue';
 
@@ -10,10 +12,8 @@ export const StatusBar: React.FC = () => {
   const { caps } = useRadioCapabilities();
   const [showFirmwareWarning, setShowFirmwareWarning] = useState(false);
   const showUserGestureInBar = connectionError?.includes('Please click the button directly') ?? false;
-  const hasRealFirmware = !!(radioInfo?.firmware && radioInfo.firmware !== '-' && radioInfo.firmware.trim() !== '');
-  const EXPECTED_FIRMWARE = 'DM32.01.L01.048';
-  const isNewerFirmware = !!(hasRealFirmware && caps?.isFirmware049OrNewer?.(radioInfo!.firmware));
-  const needsFirmwareUpdate = hasRealFirmware && radioInfo!.firmware !== EXPECTED_FIRMWARE && !isNewerFirmware;
+  const expectedFirmware = caps?.expectedFirmware;
+  const { isNewerFirmware, needsFirmwareUpdate } = firmwareWarning(caps, radioInfo?.firmware);
   const deviceValue = (v: string | undefined) => (v && v.trim() && v !== '-' ? v : '-');
 
   return (
@@ -33,7 +33,7 @@ export const StatusBar: React.FC = () => {
                 {(needsFirmwareUpdate || isNewerFirmware) && (
                   <button
                     onClick={() => setShowFirmwareWarning(true)}
-                    className="text-yellow-400 hover:text-yellow-300 transition-colors cursor-pointer"
+                    className={`${BUTTON.cautionLink} cursor-pointer`}
                     title={isNewerFirmware ? "Firmware version not recommended" : "Firmware update recommended"}
                   >
                     ⚠️
@@ -65,7 +65,7 @@ export const StatusBar: React.FC = () => {
             <button
               type="button"
               onClick={() => setConnectionError(null)}
-              className="text-cool-gray hover:text-white flex-shrink-0"
+              className={`${BUTTON.ghost} flex-shrink-0`}
               title="Dismiss"
               aria-label="Dismiss"
             >
@@ -101,7 +101,7 @@ export const StatusBar: React.FC = () => {
               <>
                 <p className="text-white mb-2">
                   Your radio firmware version is <span className="font-mono text-neon-cyan">{radioInfo?.firmware}</span>, 
-                  but the recommended version is <span className="font-mono text-neon-cyan">{EXPECTED_FIRMWARE}</span>.
+                  but the recommended version is <span className="font-mono text-neon-cyan">{expectedFirmware}</span>.
                 </p>
                 <p className="text-cool-gray">
                   We recommend updating your firmware to ensure compatibility with all features and bug fixes. 

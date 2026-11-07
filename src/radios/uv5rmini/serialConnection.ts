@@ -12,7 +12,6 @@ import {
 } from './constants';
 import {
   BAOFENG_MAGICS_READ,
-  BAOFENG_MAGICS_UPLOAD,
   buildBaofengReadFrame,
   buildBaofengWriteFrame,
   parseBaofengReadResponse,
@@ -26,8 +25,16 @@ const READ_TIMEOUT_MS = 6000;
 const WRITE_ACK_TIMEOUT_MS = 400;
 
 export class UV5RMiniSerialConnection extends BaseSerialConnection {
+  /** Serial uploads stay at 0x40, as CHIRP does off Bluetooth. */
+  readonly uploadBlockSize = BAOFENG_BLOCK_SIZE;
+
+  // No direction here: over serial both use the same magics and 0x40 blocks,
+  // so the session is the same either way.
   async connect(port: UV5RMiniSerialPort): Promise<void> {
     await super.openPort(port);
+    // CHIRP raises DTR and RTS on every serial open (chirp_common WANTS_DTR / WANTS_RTS,
+    // not overridden by any Baofeng driver). Web Serial leaves them to the OS.
+    await port.setSignals?.({ dataTerminalReady: true, requestToSend: true });
     await this.delay(300);
     this.buf = new Uint8Array(0);
     await this.delay(200);
@@ -37,6 +44,10 @@ export class UV5RMiniSerialConnection extends BaseSerialConnection {
     await this.waitForByte(BAOFENG_ACK, 8000);
 
     // Magics (read mode)
+    // The direction is fixed for the whole session: the radio answers one
+    // ident per power cycle, so a write has to start in upload mode rather
+    // than turn a read session around.
+    // CHIRP sends the same magics for both directions.
     for (const { send, responseLen } of BAOFENG_MAGICS_READ) {
       this.buf = new Uint8Array(0);
       await this.write(send);
@@ -70,7 +81,7 @@ export class UV5RMiniSerialConnection extends BaseSerialConnection {
     this.buf = new Uint8Array(0);
     await this.write(BAOFENG_IDENT);
     await this.waitForByte(BAOFENG_ACK, 8000);
-    for (const { send, responseLen } of BAOFENG_MAGICS_UPLOAD) {
+    for (const { send, responseLen } of BAOFENG_MAGICS_READ) {
       this.buf = new Uint8Array(0);
       await this.write(send);
       await this.readExact(responseLen, 4000);
@@ -86,13 +97,11 @@ export class UV5RMiniSerialConnection extends BaseSerialConnection {
           return;
         }
       }
-      const { value } = await this.reader!.read();
-      if (value && value.length > 0) {
-        const next = new Uint8Array(this.buf.length + value.length);
-        next.set(this.buf);
-        next.set(value, this.buf.length);
-        this.buf = next;
-      }
+      // Waits on the shared read, bounded by what is left of the deadline.
+      // This called `reader.read()` bare, which never returns while the radio
+      // is silent: a handshake the radio didn't answer hung the read at 5% and
+      // left the port locked until the page was reloaded.
+      await this.waitForChunk(deadline - Date.now());
       await this.delay(20);
     }
     throw new Error(`Timeout waiting for byte 0x${byte.toString(16)}`);
@@ -112,13 +121,7 @@ export class UV5RMiniSerialConnection extends BaseSerialConnection {
           : new Uint8Array(0);
         return out;
       }
-      const { value } = await this.reader!.read();
-      if (value && value.length > 0) {
-        const next = new Uint8Array(this.buf.length + value.length);
-        next.set(this.buf);
-        next.set(value, this.buf.length);
-        this.buf = next;
-      }
+      await this.waitForChunk(deadline - Date.now());
       await this.delay(20);
     }
     throw new Error(

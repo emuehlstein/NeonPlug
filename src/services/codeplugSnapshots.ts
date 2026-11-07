@@ -5,12 +5,13 @@
 
 import { compressText, decompressText } from '../utils/compression';
 import type { CodeplugData } from './codeplugExport';
-import { codeplugToJsonSafe, jsonSafeToCodeplug } from './codeplugExport';
+import { codeplugToJsonSafe, jsonSafeToCodeplug, CodeplugFormatError } from './codeplugExport';
 
 const STORAGE_KEY = 'neonplug-codeplug-snapshots';
 const MAX_SNAPSHOTS = 50;
 
-export type SnapshotEventType = 'read' | 'write' | 'import';
+/** `backup` keeps unsaved edits just before something replaces them (services/unsavedEdits.ts). */
+export type SnapshotEventType = 'read' | 'write' | 'import' | 'backup';
 
 export interface SnapshotEntry {
   id: string;
@@ -26,6 +27,8 @@ export interface SaveSnapshotOptions {
   eventType: SnapshotEventType;
   radioModel?: string;
   fileName?: string;
+  /** For a backup, what was about to replace the codeplug, e.g. "reading the radio". */
+  reason?: string;
 }
 
 interface StoredSnapshots {
@@ -56,11 +59,14 @@ async function compress(data: CodeplugData): Promise<string> {
   return uint8ArrayToBase64(deflated);
 }
 
-async function decompress(base64: string): Promise<CodeplugData> {
+async function decompress(
+  base64: string,
+  opts?: { allowNewerFormat?: boolean }
+): Promise<CodeplugData> {
   const deflated = base64ToUint8Array(base64);
   const jsonString = await decompressText(deflated);
   const raw = JSON.parse(jsonString) as Record<string, unknown>;
-  return jsonSafeToCodeplug(raw);
+  return jsonSafeToCodeplug(raw, opts);
 }
 
 function loadFromStorage(): StoredSnapshots {
@@ -97,7 +103,7 @@ function generateId(): string {
 }
 
 function buildSnapshotLabel(options: SaveSnapshotOptions): string {
-  const { eventType, radioModel, fileName } = options;
+  const { eventType, radioModel, fileName, reason } = options;
   const model = radioModel ?? 'unknown radio';
   switch (eventType) {
     case 'read':
@@ -106,6 +112,8 @@ function buildSnapshotLabel(options: SaveSnapshotOptions): string {
       return `Write to ${model}`;
     case 'import':
       return fileName ? `Import: ${fileName} (${model})` : `Import (${model})`;
+    case 'backup':
+      return `Unsaved edits, before ${reason ?? 'replacing them'} (${model})`;
     default:
       return 'Codeplug';
   }
@@ -145,14 +153,28 @@ export function getSnapshots(): Omit<SnapshotEntry, 'data'>[] {
   }));
 }
 
-/** Load and decompress full codeplug data for a snapshot. */
-export async function getSnapshotData(id: string): Promise<CodeplugData | null> {
+/**
+ * Load and decompress full codeplug data for a snapshot.
+ *
+ * Returns `null` for a missing or undecodable entry (unchanged), but
+ * **propagates `CodeplugFormatError`** so callers can show the warning and offer
+ * the override. Swallowing it here made Restore a silent dead button.
+ *
+ * This matters more than it looks: `/` (release) and `/dev/` (main) are the same
+ * origin and share this store, so format skew is reachable without anyone
+ * exchanging a file.
+ */
+export async function getSnapshotData(
+  id: string,
+  opts?: { allowNewerFormat?: boolean }
+): Promise<CodeplugData | null> {
   const stored = loadFromStorage();
   const entry = stored.snapshots.find((s) => s.id === id);
   if (!entry) return null;
   try {
-    return await decompress(entry.data);
-  } catch {
+    return await decompress(entry.data, opts);
+  } catch (error) {
+    if (error instanceof CodeplugFormatError) throw error;
     return null;
   }
 }

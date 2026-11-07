@@ -4,20 +4,34 @@
  */
 import type { RadioProtocol } from '../types/radio';
 import type { RadioDescriptor } from './types';
-import { DM32UV_DESCRIPTOR } from './dm32uv/descriptor';
+import { DM32UV_DESCRIPTOR, DM36_DESCRIPTOR } from './dm3x/descriptor';
 import { UV5RMINI_DESCRIPTOR } from './uv5rmini/descriptor';
 import { FT65_DESCRIPTOR, FT4_DESCRIPTOR, FT4VR_DESCRIPTOR, FT25R_DESCRIPTOR } from './ft65/descriptor';
+import { D890UV_DESCRIPTOR, D890UV_ANYTONE_DESCRIPTOR } from './d890uv/descriptor';
+import { RT950PRO_DESCRIPTOR } from './rt950pro/descriptor';
 
 export type ProtocolFactory = () => RadioProtocol;
 
 /** All registered radios. Add new radios here. */
 export const RADIO_DESCRIPTORS: readonly RadioDescriptor[] = [
   DM32UV_DESCRIPTOR,
+  // ALPHA, not yet run on a radio. The DM-32UV's driver under its own name.
+  DM36_DESCRIPTOR,
   UV5RMINI_DESCRIPTOR,
   FT65_DESCRIPTOR,
   FT4_DESCRIPTOR,
   FT4VR_DESCRIPTOR,
   FT25R_DESCRIPTOR,
+  // ALPHA. Reads and writes the whole codeplug, with most regions confirmed by
+  // hardware round trips and the rest written back as read — see
+  // DA7X2-COVERAGE.md for exactly which. Two descriptors, one driver: the same
+  // radio is sold by BTECH as the DA-7X2 and by Anytone as the AT-D890UV, and a
+  // combined "BTECH / Anytone" label asked the user to recognise a badge that
+  // is not on their radio.
+  D890UV_DESCRIPTOR,
+  D890UV_ANYTONE_DESCRIPTOR,
+  // ALPHA, and untested on hardware. Same protocol family as the UV5R-Mini.
+  RT950PRO_DESCRIPTOR,
 ];
 
 /** Backward compatibility: same radio, multiple model IDs. */
@@ -40,6 +54,8 @@ export interface RadioPickerOption {
   icon: string;
   group?: string;
   supportsBle: boolean;
+  /** 'alpha' renders a badge beside the label. See RadioDescriptor.status. */
+  status?: 'alpha';
 }
 
 const RADIO_PICKER_OPTIONS: RadioPickerOption[] = RADIO_DESCRIPTORS.map((d) => ({
@@ -48,6 +64,7 @@ const RADIO_PICKER_OPTIONS: RadioPickerOption[] = RADIO_DESCRIPTORS.map((d) => (
   icon: d.icon,
   group: d.group,
   supportsBle: d.supportsBle,
+  status: d.status,
 }));
 
 export function getRadioPickerOptions(): RadioPickerOption[] {

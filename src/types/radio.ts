@@ -12,7 +12,7 @@ export type { RadioSettings } from '../models';
  * Analog radios (FT-65, UV5R-Mini) implement only this surface.
  */
 export interface AnalogRadioProtocol {
-  connect(portOrOptions?: string | { forcePortSelection?: boolean; transport?: string }): Promise<void>;
+  connect(portOrOptions?: string | { forcePortSelection?: boolean; transport?: string; mode?: 'download' | 'upload' }): Promise<void>;
   disconnect(): Promise<void>;
   isConnected(): boolean;
   getRadioInfo(): Promise<RadioInfo>;
@@ -36,17 +36,26 @@ export interface DigitalRadioProtocol extends AnalogRadioProtocol {
   readDMRRadioIDs(): Promise<DMRRadioID[]>;
   writeDMRRadioIDs(radioIds: DMRRadioID[]): Promise<void>;
   readContacts(): Promise<Contact[]>;
-  writeContacts(contacts: Contact[]): Promise<void>;
+  /**
+   * `onProgress` and `shouldCancel` are optional because most radios write
+   * contacts as part of the codeplug. The DA-7X2's DMR contact database is its
+   * own multi-minute upload and needs both.
+   */
+  writeContacts(
+    contacts: Contact[],
+    onProgress?: (percent: number, message: string) => void,
+    shouldCancel?: () => boolean
+  ): Promise<void>;
 }
 
 /**
  * Full public API of the DM-32UV protocol, including DM32-specific operations
  * not present in the base digital radio interface.
  *
- * DM32UVProtocol implements this. A future DM32-compatible radio should also
+ * DM3xRadio implements this. A future DM32-compatible radio should also
  * implement this if it shares the same on-air structures.
  */
-export interface DM32Protocol extends DigitalRadioProtocol {
+export interface DM3xProtocol extends DigitalRadioProtocol {
   // Bulk memory read (DM-32 reads all 4 KB blocks up front)
   bulkReadRequiredBlocks(): Promise<void>;
 
@@ -119,7 +128,23 @@ export interface RadioInfo {
   };
   /** Optional raw V-frame data; DM-32 only. Other radios omit. */
   vframes?: Map<number, Uint8Array>;
+  /**
+   * Optional hardware the radio itself reports having (DM-32: the factory info
+   * page). Absent means not asked or not answered, which is not the same as
+   * false: only an explicit false may hide anything. See radioLacks().
+   */
+  hardwareFeatures?: Partial<Record<RadioHardwareFeature, boolean>>;
 }
+
+/** Optional hardware a radio can report, in the vendor CPS's "Function Item" terms. */
+export type RadioHardwareFeature =
+  | 'vibrate'
+  | 'manDown'
+  | 'gps'
+  | 'bluetooth'
+  | 'sdCard'
+  | 'roaming'
+  | 'recording';
 
 /**
  * Protocol boundary: all methods take or return only standard codeplug types
@@ -139,7 +164,16 @@ export interface RadioProtocol {
   readDMRRadioIDs(): Promise<DMRRadioID[]>;
   writeDMRRadioIDs(radioIds: DMRRadioID[]): Promise<void>;
   readContacts(): Promise<Contact[]>;
-  writeContacts(contacts: Contact[]): Promise<void>;
+  /**
+   * `onProgress` and `shouldCancel` are optional because most radios write
+   * contacts as part of the codeplug. The DA-7X2's DMR contact database is its
+   * own multi-minute upload and needs both.
+   */
+  writeContacts(
+    contacts: Contact[],
+    onProgress?: (percent: number, message: string) => void,
+    shouldCancel?: () => boolean
+  ): Promise<void>;
   readRadioSettings(): Promise<RadioSettings | null>;
   writeRadioSettings(settings: RadioSettings, options?: { changedFields?: string[] }): Promise<void>;
   onProgress?: (progress: number, message: string) => void;
@@ -152,4 +186,8 @@ export interface RadioProtocol {
    *  next writeChannels uploads (Yaesu clone protocol). The connection hook must call
    *  writeRadioSettings BEFORE writeChannels for these protocols. */
   readonly bufferedSettingsWrite?: boolean;
+  /** True when this protocol decodes settings but cannot write them back yet.
+   *  The connection hook refuses the write UP FRONT rather than calling the base
+   *  no-op and then clearing the change flags — see BaseProtocols. */
+  readonly settingsWriteUnsupported?: boolean;
 }

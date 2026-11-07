@@ -1,3 +1,5 @@
+import type { RadioCapabilities } from '../types/radioCapabilities';
+
 /**
  * Firmware utility functions
  */
@@ -47,6 +49,11 @@ export function getContactCapacityFromVFrame(contactsVFrame: Uint8Array | undefi
   return capacity;
 }
 
+/** Contacts a DM-32 holds on standard firmware — and so what every DM-32 holds. */
+export const DM32_CONTACTS_STANDARD = 50000;
+/** Contacts a DM-32 holds on L01 firmware. */
+export const DM32_CONTACTS_L01 = 150000;
+
 /**
  * Get contact capacity based on firmware version (fallback method)
  * 
@@ -60,9 +67,9 @@ export function getContactCapacityFromVFrame(contactsVFrame: Uint8Array | undefi
  */
 export function getContactCapacity(firmware: string): number {
   if (firmware.includes('L01')) {
-    return 150000;
+    return DM32_CONTACTS_L01;
   }
-  return 50000;
+  return DM32_CONTACTS_STANDARD;
 }
 
 /**
@@ -117,3 +124,24 @@ export function isFirmware049OrNewer(firmware: string): boolean {
   return !isNaN(versionNumber) && versionNumber >= 49;
 }
 
+
+/**
+ * Whether the connected radio's firmware gets a warning: too new to be tested
+ * (`newer`), or older than the known-good one (`update`). A firmware the radio
+ * lists as supported gets neither. Shared by the status bar and the Settings
+ * tab so the two can't disagree.
+ */
+export function firmwareWarning(
+  caps: RadioCapabilities | null | undefined,
+  firmware: string | undefined
+): { isNewerFirmware: boolean; needsFirmwareUpdate: boolean } {
+  const real = !!firmware && firmware !== '-' && firmware.trim() !== '';
+  if (!real || caps?.supportedFirmware?.includes(firmware!)) {
+    return { isNewerFirmware: false, needsFirmwareUpdate: false };
+  }
+  const isNewerFirmware = !!caps?.isFirmware049OrNewer?.(firmware!);
+  // Only warn when the radio declares a known-good firmware. No declaration
+  // means no opinion — not 'wrong firmware'.
+  const needsFirmwareUpdate = !!caps?.expectedFirmware && firmware !== caps.expectedFirmware && !isNewerFirmware;
+  return { isNewerFirmware, needsFirmwareUpdate };
+}
